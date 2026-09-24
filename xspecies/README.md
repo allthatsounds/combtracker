@@ -53,7 +53,7 @@ peak are charged.
 ¹ hermits use k = 0,1,2,3 (only ~5 harmonics below Nyquist); the columns shown
 are k=2 and k=3.
 
-## Reading it honestly
+## Description
 
 **It reproduces on two of four taxa, and the two failures are diagnostic.**
 
