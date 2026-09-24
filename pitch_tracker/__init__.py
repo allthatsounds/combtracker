@@ -3,8 +3,10 @@
 The full package's ``__init__`` also imports ``fine_contour`` and ``ridge``,
 which pull in the cool-frames filterbank library. Nothing reported in the paper
 uses them: every result goes through ``comb_f0``, ``shrp``, ``evaluate`` and
-``groundtruth``. The upstream file is kept beside this one as
-``__init__.py.orig`` so the difference is visible rather than silent.
+``groundtruth``, so only those four ship here.
+
+Importing the package needs numpy only. ``groundtruth.parse_raw_sheet`` (reading
+the annotation workbooks) additionally needs openpyxl, imported when called.
 """
 from . import comb_f0, evaluate, groundtruth, shrp   # noqa: F401
 

@@ -25,8 +25,11 @@ scores each against the traced contours:
 ```
 clip                                F0 ref  lowest    as |    comb          no exempt      SHRP
 -----------------------------------------------------------------------------------------------
+ADDOA033.WAV_141_67.wav              16.9H   34.3H  H2  |   17.0 Hz ok        17.0 Hz ok         8.6 Hz x  x0.5
 AWE21-MixPre-433.WAV_a0311_63.wav    15.3H   30.5H  H2  |   15.5 Hz ok        15.5 Hz ok        10.2 Hz x  x0.5
+EFAF2011A030.WAV_386_353.wav         17.4H   53.2H  H3  |   18.3 Hz ok        36.7 Hz x  x2      8.8 Hz x  x0.5
 EFAF2011A030.WAV_396_366.wav         16.9H  101.6H  H6  |   16.8 Hz ok        16.8 Hz ok         8.8 Hz x  x0.5
+EFAF2011A032.WAV_412_382.wav         19.8H   98.9H  H5  |   19.7 Hz ok        19.7 Hz ok         8.0 Hz x  x0.25
 ```
 
 `lowest` is the lowest hand-traced harmonic and `as` which harmonic it is — 30
@@ -99,6 +102,8 @@ what they are.
 ## Notes
 
 - `pitch_tracker` needs numpy and nothing else, and imports no frame library.
+  Only `groundtruth.parse_raw_sheet`, which reads the annotation workbooks,
+  also needs openpyxl, and imports it when called.
 - **CREPE is not reproducible run to run.** `torchcrepe.predict` returns
   different $f_0$ on identical input and `torch.manual_seed` does not fix it —
   across 220 clips a fresh seeded run matched stored seeded rows on zero of

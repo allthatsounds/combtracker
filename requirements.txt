@@ -10,9 +10,14 @@ matplotlib>=3.10
 
 # Re-running the cross-species benchmark over the Dryad audio also needs:
 scipy>=1.15
+pandas>=2.2
 librosa==0.11.0
 soundfile>=0.12
 
 # ...and its CREPE arm additionally:
 torch==2.14.0
 torchcrepe==0.0.24
+
+# Reading the elephant annotation workbooks (not shipped) with
+# pitch_tracker.groundtruth.parse_raw_sheet also needs:
+openpyxl>=3.1

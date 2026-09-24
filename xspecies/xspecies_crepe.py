@@ -2,8 +2,8 @@
 """Add a CREPE arm to the cross-species benchmark of ``xspecies.py``.
 
 Everything about the experiment is reused from ``xspecies.py`` by import --
-the species parameters, the harmonic-removal filter, the ground-truth seam,
-the scorer -- so the CREPE rows are produced under exactly the conditions the
+the species parameters, the harmonic-removal filter, the pre-derived
+reference, the scorer -- so the CREPE rows are produced under exactly the conditions the
 comb and pYIN rows were. The clip set is not re-sampled either: it is read
 back from ``results/xspecies_rows.csv``, so the new column is scored on the
 same 100 clips per species as the existing ones.
@@ -97,8 +97,8 @@ def _crepe(x, fs_declared, fmin, fmax, hop_samples):
         torch.set_num_threads(1)
         _TORCH["torch"], _TORCH["tc"] = torch, torchcrepe
     torch, torchcrepe = _TORCH["torch"], _TORCH["tc"]
-    # torchcrepe.predict is not reproducible run to run; seed each call,
-    # as vendor/run_external_baselines._crepe now does.
+    # Seeded for good measure, though torchcrepe.predict is not reproducible
+    # run to run even so (see the README's Notes).
     torch.manual_seed(0)
     audio = torch.tensor(np.ascontiguousarray(x, dtype=np.float32)).unsqueeze(0)
     f0, per = torchcrepe.predict(
@@ -144,7 +144,8 @@ def do_clip(job):
             continue
         try:
             tt, ff = run_crepe(xk, fs, Pc, sh)
-            m = EV.score_tracked_f0(tt, ff, derived, max_gap_s=max_gap)
+            m = EV.score_tracked_f0(tt, ff, None, derived=derived,
+                                    max_gap_s=max_gap)
         except Exception as exc:                                # noqa: BLE001
             print("    %s/%s k=%d crepe: %r" % (sp, key, k, exc), flush=True)
             m = None
@@ -182,7 +183,6 @@ def main():
     if bad:
         raise SystemExit("shift factors do not bring every species into "
                          "CREPE's range:\n  " + "\n  ".join(bad))
-    EV.derive_f0_curve_v2 = lambda d: d          # same seam as xspecies.main
 
     want = wanted_clips(a.rows)
     jobs = []

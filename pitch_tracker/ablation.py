@@ -9,8 +9,10 @@ variant isolates the objective and nothing else.
 
     exempt=False        charge the gap penalty from the first harmonic up
                         instead of from the lowest observed peak, i.e. the
-                        missing-fundamental exemption removed. This is the
-                        paper's central claim and the demo's third arm.
+                        missing-fundamental exemption removed, which reduces
+                        the objective to a two-way mismatch over slots. It is
+                        the demo's second arm and the paper's "without the
+                        exemption" ablation (94.1 % against 97.0 %).
     relative_sigma=True match tolerance proportional to the candidate F0
                         rather than absolute Hz.
 
@@ -36,8 +38,15 @@ import numpy as np
 
 def make_scorer(exempt=True, relative_sigma=False):
     """Return a comb_score_frame with the requested ablation applied."""
-    def scorer(peak_freqs, peak_weights, f0_cands, *, sigma_hz=1.5,
-               gap_penalty=0.55, max_harmonic=40):
+    def scorer(peak_freqs, peak_weights, f0_cands, *, sigma_hz=None,
+               gap_penalty=None, max_harmonic=40):
+        # No defaults, for the reason comb_f0.comb_score_frame gives: a default
+        # here would silently score a different objective on a direct call.
+        # estimate_f0 always passes both.
+        if sigma_hz is None or gap_penalty is None:
+            raise TypeError("scorer requires sigma_hz and gap_penalty; the "
+                            "pipeline values are sigma_hz=0.94/win_seconds "
+                            "and gap_penalty=1.0")
         n_c = len(f0_cands)
         scores = np.full(n_c, -np.inf, dtype=float)
         lowest_k = np.zeros(n_c, dtype=int)

@@ -7,8 +7,9 @@ unlabelled row carrying the matching frequency values in Hz.
 
 Two things about this data drive everything downstream:
 
-1. **contourID = 1 is not the fundamental.**  Across the 784 scored calls its
-   median implied harmonic number is ~2, i.e. the annotator traced the lowest
+1. **contourID = 1 is not the fundamental.**  Across the 774 calls with
+   scorable ground truth (of 809 annotated) its median implied harmonic
+   number is ~2, i.e. the annotator traced the lowest
    *visible* harmonic, not F0.  Comparing a tracker against contourID 1
    literally is wrong for roughly half the corpus.
 2. **F0 is therefore recovered from the stack, not from any single contour.**
@@ -17,9 +18,15 @@ Two things about this data drive everything downstream:
    an integer harmonic number and averages ``F_i / k_i``, which uses absolute
    positions and divides tracing error by ``k``.
 
-``derive_f0_curve_v2`` also reports ``gt_spread_cents`` — the disagreement
-between k-normalised contours, ~19 cents median.  That is the annotation's own
-noise floor and no tracker can be expected to beat it.
+``derive_f0_curve_v2`` also reports ``gt_spread_cents`` — the standard
+deviation, in cents, between the k-normalised contours at each instant (~19
+cents median over the corpus).  It measures how tightly the
+traced stack itself defines F0, mixing tracing error with genuine inharmonicity.
+It is context for the error figures, not a floor: a tracker can and does score
+below it, because the reference is a median over contours.
+
+Reading the workbooks needs openpyxl, which is imported inside
+:func:`parse_raw_sheet` so that the rest of the package needs numpy only.
 """
 
 from __future__ import annotations
@@ -27,7 +34,6 @@ from __future__ import annotations
 import re
 
 import numpy as np
-import openpyxl
 
 __all__ = [
     "clip_basename",
@@ -46,6 +52,7 @@ def clip_basename(raw_filename: str) -> str:
 
 def parse_raw_sheet(xlsx_path: str) -> dict:
     """{clip_basename: [{"contourID": int, "t": ndarray, "f": ndarray}, ...]}"""
+    import openpyxl
     wb = openpyxl.load_workbook(xlsx_path, read_only=True, data_only=True)
     ws = wb["RAW"]
     rows = ws.iter_rows(values_only=True)
@@ -70,13 +77,18 @@ def parse_raw_sheet(xlsx_path: str) -> dict:
     return out
 
 
-def derive_f0_curve(contours: list, grid_dt: float = 0.05):
+def derive_f0_curve(contours: list, grid_dt: float = 0.05,
+                    max_gap_s: float = 0.15):
     """Combine a call's traced harmonic stack into one F0(t) curve.
 
     At each point of a common time grid, interpolate every contour that
     covers that instant, sort the resulting frequencies, take the median
     of consecutive differences as the instantaneous inter-harmonic
     spacing (= F0 estimate). Requires >=2 contours alive at a grid point.
+    A contour is not extended past its own first and last traced point, and
+    is blanked wherever its nearest traced point is more than ``max_gap_s``
+    away -- the same two rules :func:`derive_f0_curve_v2` applies, so the
+    provisional spacing that seeds v2 is built on the same interpolation.
     Also returns, for informational purposes, the harmonic number that
     best matches contourID==1 against the derived F0.
     """
@@ -95,6 +107,8 @@ def derive_f0_curve(contours: list, grid_dt: float = 0.05):
         vals = np.full(grid.shape, np.nan)
         in_range = (grid >= t.min()) & (grid <= t.max())
         vals[in_range] = np.interp(grid[in_range], t, f)
+        gap = np.abs(t[None, :] - grid[:, None]).min(axis=1)
+        vals[gap > max_gap_s] = np.nan
         per_contour_interp.append(vals)
     stack = np.vstack(per_contour_interp)  # (n_contours, n_grid)
 
@@ -112,7 +126,9 @@ def derive_f0_curve(contours: list, grid_dt: float = 0.05):
 
     # Which harmonic number is contourID==1?
     c1 = next((c for c in contours if c["contourID"] == 1), contours[0])
-    c1_interp = np.interp(grid, c1["t"], c1["f"], left=np.nan, right=np.nan)
+    o1 = np.argsort(c1["t"])            # np.interp needs ascending sample times
+    c1_interp = np.interp(grid, np.asarray(c1["t"])[o1], np.asarray(c1["f"])[o1],
+                          left=np.nan, right=np.nan)
     valid = np.isfinite(c1_interp) & np.isfinite(f0_est) & (f0_est > 1e-6)
     harmonic_number = (
         float(np.median(c1_interp[valid] / f0_est[valid])) if valid.any() else np.nan
@@ -124,7 +140,8 @@ def derive_f0_curve(contours: list, grid_dt: float = 0.05):
     }
 
 
-def derive_f0_curve_v2(contours: list, grid_dt: float = 0.05):
+def derive_f0_curve_v2(contours: list, grid_dt: float = 0.05,
+                       max_gap_s: float = 0.15):
     """Harmonic-number-aware ground-truth F0 (v2 — the default since 2026-08-24).
 
     v1 (:func:`derive_f0_curve`) uses the median of consecutive frequency
@@ -140,11 +157,12 @@ def derive_f0_curve_v2(contours: list, grid_dt: float = 0.05):
     shape improve; validated against an independent multi-harmonic
     peak-picking instrument (corr 0.08 -> 0.40, |level bias| 25c -> 12c
     on 19 dev clips). Also returns ``gt_spread_cents`` — the internal
-    disagreement between k-normalised contours (~19c median), i.e. the
-    annotation's own noise floor. Returns None when no contour gets an
+    disagreement between k-normalised contours (~19c median), which says
+    how tightly the stack defines F0 (see the module docstring; it is not a
+    floor on tracker error). Returns None when no contour gets an
     unambiguous harmonic number (typically 2-3-contour clips).
     """
-    v1 = derive_f0_curve(contours, grid_dt=grid_dt)
+    v1 = derive_f0_curve(contours, grid_dt=grid_dt, max_gap_s=max_gap_s)
     if v1 is None:
         return None
     grid_t = v1["grid_t"]
@@ -161,9 +179,10 @@ def derive_f0_curve_v2(contours: list, grid_dt: float = 0.05):
         if ok.sum() < 2:
             interp.append(np.full_like(grid_t, np.nan))
             continue
-        fi = np.interp(grid_t, t[ok], f[ok], left=np.nan, right=np.nan)
+        o = np.argsort(t[ok])           # np.interp needs ascending sample times
+        fi = np.interp(grid_t, t[ok][o], f[ok][o], left=np.nan, right=np.nan)
         gap = np.array([np.min(np.abs(t[ok] - g)) for g in grid_t])
-        fi[gap > 0.15] = np.nan
+        fi[gap > max_gap_s] = np.nan
         interp.append(fi)
     interp = np.array(interp)
 

@@ -18,8 +18,11 @@ and each is scored against the traced contours with the shipped scorer.
     python3 demo/run_demo.py
     python3 demo/run_demo.py --plot     also writes demo/demo.png
 
-Expected: the comb objective lands on the annotated fundamental; drop the
-exemption and it walks up to a harmonic on most of these clips.
+Expected: the comb objective lands on the annotated fundamental on all five,
+SHRP loses the octave (downward) on all five, and the objective without the
+exemption loses it on one (EFAF2011A030.WAV_386_353, an octave up). Over the
+corpus the exemption is worth 3.0 points; these five were chosen, so the
+proportion here says nothing about that.
 """
 from __future__ import annotations
 
@@ -183,11 +186,11 @@ def main():
               % (label, ok, len(rows),
                  ("%.1f cents" % float(np.median(cents))) if cents else "n/a"))
     print()
-    print("For the measured result, Table 1 of the paper reports 97.0 % "
-          "octave-correct")
-    print("for the comb objective over 675 held-out clips, 94.1 % with the "
+    print("For the measured result, the paper reports 97.0 % octave-correct "
+          "for the")
+    print("comb objective over 675 held-out clips (Table 1), 94.1 % with the "
           "exemption")
-    print("removed, and 75.4 % for SHRP over the same clips.")
+    print("removed (section 4.1), and 75.4 % for SHRP over the same clips.")
 
     if a.plot:
         make_plot(rows, ref)

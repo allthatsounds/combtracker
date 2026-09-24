@@ -11,9 +11,9 @@ whether the *exemption* buys the same thing on other taxa, at F0s spanning a
 factor of 30, that it buys on elephant rumbles.
 
 Ground truth here is a direct per-frame (time, F0) CSV rather than the
-elephant corpus's hand-traced harmonic stack, so `derive_f0_curve_v2` is
-substituted with an identity so that every metric downstream of it in
-`pitch_tracker.evaluate.score_tracked_f0` is reused verbatim.
+elephant corpus's hand-traced harmonic stack, so it is handed to
+`pitch_tracker.evaluate.score_tracked_f0` already derived (its `derived=`
+argument) and every metric downstream is reused verbatim.
 """
 from __future__ import annotations
 
@@ -22,8 +22,8 @@ import numpy as np, pandas as pd, soundfile as sf
 from scipy.signal import butter, sosfiltfilt
 
 # Resolve the tracker package: $PITCH_TRACKER_ROOT, else the parent directory
-# (the shipped reproduce/ layout puts pitch_tracker/ beside xspecies/), else
-# this directory (the working layout, where it sits alongside).
+# (this repository's layout, pitch_tracker/ beside xspecies/), else this
+# directory.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 for _cand in (os.environ.get("PITCH_TRACKER_ROOT"),
               os.path.dirname(_HERE), _HERE):
@@ -33,33 +33,8 @@ for _cand in (os.environ.get("PITCH_TRACKER_ROOT"),
 else:
     sys.exit("cannot locate the pitch_tracker package; set PITCH_TRACKER_ROOT")
 
-# `pitch_tracker.fine_contour` imports cool-frames at module level for a
-# function this experiment never calls. Stub it so the package imports; nothing
-# below touches the stub.
-import types as _types
-
-
-class _StubFinder:
-    """Satisfy any `cool_frames.*` import with an empty module."""
-    def find_module(self, name, path=None):
-        return self if name == "cool_frames" or name.startswith("cool_frames.") else None
-
-    def load_module(self, name):
-        if name in sys.modules:
-            return sys.modules[name]
-        m = _types.ModuleType(name)
-        m.__path__ = []          # make every stub a package
-        m.__loader__ = self
-        m.__getattr__ = lambda attr: None
-        sys.modules[name] = m
-        return m
-
-
-sys.meta_path.append(_StubFinder())
-
 import pitch_tracker.comb_f0 as CF
 import pitch_tracker.evaluate as EV
-import pitch_tracker.shrp as SHRP
 
 warnings.filterwarnings("ignore")
 
@@ -123,7 +98,10 @@ no gain -- the octave decision is a modal statistic over frames."""
 # --------------------------------------------------------------------------
 def make_comb_score_frame(exempt: bool):
     def comb_score_frame(peak_freqs, peak_weights, f0_cands, *,
-                         sigma_hz=1.5, gap_penalty=0.55, max_harmonic=40):
+                         sigma_hz=None, gap_penalty=None, max_harmonic=40):
+        # No defaults, as in comb_f0.comb_score_frame; estimate_f0 passes both.
+        if sigma_hz is None or gap_penalty is None:
+            raise TypeError("comb_score_frame requires sigma_hz and gap_penalty")
         n_c = len(f0_cands)
         scores = np.full(n_c, -np.inf, dtype=float)
         lowest_k = np.zeros(n_c, dtype=int)
@@ -303,7 +281,8 @@ def do_clip(job):
         for arm, fn in ARMS.items():
             try:
                 tt, ff = fn(xk, fs, Pc)
-                m = EV.score_tracked_f0(tt, ff, derived, max_gap_s=max_gap)
+                m = EV.score_tracked_f0(tt, ff, None, derived=derived,
+                                        max_gap_s=max_gap)
             except Exception:
                 m = None
             if not m or m.get("n_scored", 0) == 0:
@@ -321,13 +300,12 @@ def main():
     import multiprocessing as mp
     ap = argparse.ArgumentParser()
     ap.add_argument("--species", nargs="*", default=list(SPECIES))
-    ap.add_argument("--limit", type=int, default=80)
+    ap.add_argument("--limit", type=int, default=100)
     ap.add_argument("--procs", type=int, default=2)
     ap.add_argument("--out", default="results/xspecies.json")
     args = ap.parse_args()
 
     assert verify_exempt_patch(), "exempt=True patch does not reproduce shipped scorer"
-    EV.derive_f0_curve_v2 = lambda d: d          # the seam: d is already derived
 
     jobs, requested = [], {}
     for sp in args.species:

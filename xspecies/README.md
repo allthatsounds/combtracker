@@ -1,15 +1,16 @@
 # Cross-species external validation of the missing-fundamental exemption
 
-Run 2026-09-09. `xspecies.py` + `results/`. Dataset: Best et al. 2025,
-doi:10.5061/dryad.prr4xgxw8 (CC0), four taxa, 100 clips each, all scored,
-0 failures.
+Run 2026-09-09 (`xspecies.py`, three arms), CREPE arm added by
+`xspecies_crepe.py` on the same clips. Dataset: Best et al. 2025,
+doi:10.5061/dryad.prr4xgxw8 (CC0), four taxa, 100 clips each; every clip is
+scored by both comb arms, with 0 failures.
 
 ## What this run is
 
 The ICASSP paper's missing-fundamental sweep (high-pass away H1…H*k*,
-rescore against the same annotation), run on four other taxa with three arms:
-the comb tracker as shipped, the comb tracker with the exemption disabled, and
-pYIN. It answers the paper's own open item — the sweep on this corpus is a
+rescore against the same annotation), run on four other taxa with four arms:
+the comb tracker as shipped, the comb tracker with the exemption disabled,
+pYIN, and CREPE. It answers the paper's own open item — the sweep on this corpus is a
 *characterisation*; on another corpus it is a *validation*.
 
 ## How the elephant configuration was scaled
@@ -29,29 +30,36 @@ Hop is `max(win/25, duration/150)`, a cost bound only; the octave decision is
 a modal statistic over frames.
 
 The `exempt=True` code path is asserted at run time to reproduce the shipped
-`comb_score_frame` bit-for-bit (`verify_exempt_patch`), so the two comb arms
+`comb_score_frame` to floating-point tolerance (`verify_exempt_patch`), so the two comb arms
 differ in exactly one term: whether empty comb lines below the lowest observed
 peak are charged.
 
 ## Result: octave-correct rate, 100 clips per species
 
-| species | F0 | arm | k=0 | k=2 | k=4 | k=6 |
-|---|---|---|---|---|---|---|
-| lions | 150 Hz | **comb** | **96 %** | **85 %** | **73 %** | **71 %** |
-| | | comb, no exemption | 63 % | 5 % | 0 % | 0 % |
-| | | pYIN | 98 % | 34 % | 43 % | 11 % |
-| monk parakeets | 1760 Hz | **comb** | **72 %** | **60 %** | **32 %** | **31 %** |
-| | | comb, no exemption | 71 % | 9 % | 0 % | 0 % |
-| | | pYIN | 33 % | 5 % | 0 % | 10 % |
-| spotted hyenas | 312 Hz | comb | 57 % | 52 % | 47 % | 50 % |
-| | | comb, no exemption | 62 % | 45 % | 29 % | 25 % |
-| | | pYIN | 71 % | 39 % | 31 % | 22 % |
-| long-billed hermits | 4477 Hz | comb | 21 % | 9 %¹ | 8 %¹ | — |
-| | | comb, no exemption | 84 % | 7 %¹ | 3 %¹ | — |
-| | | pYIN | 90 % | 18 %¹ | 14 %¹ | — |
+Over every clip attempted at that *k*, so a clip an arm declines to answer
+counts against it -- the denominator Figure 2 plots (`octave_correct_pop` in
+`results/xspecies_all.json`). Columns are k = 0, 2, 4, 6, except hermits,
+which use k = 0, 1, 2, 3 (only ~5 harmonics below Nyquist; at k = 3, 86 of the
+100 clips are achievable).
 
-¹ hermits use k = 0,1,2,3 (only ~5 harmonics below Nyquist); the columns shown
-are k=2 and k=3.
+| species | F0 | arm | | | | |
+|---|---|---|---|---|---|---|
+| lions | 150 Hz | **comb** | 96 % | 85 % | 73 % | 71 % |
+|  |  | comb, no exemption | 63 % | 5 % | 0 % | 0 % |
+|  |  | pYIN | 97 % | 32 % | 20 % | 6 % |
+|  |  | CREPE | 100 % | 6 % | 26 % | 21 % |
+| monk parakeets | 1760 Hz | **comb** | 72 % | 60 % | 32 % | 31 % |
+|  |  | comb, no exemption | 71 % | 9 % | 0 % | 0 % |
+|  |  | pYIN | 6 % | 2 % | 0 % | 3 % |
+|  |  | CREPE | 90 % | 87 % | 63 % | 24 % |
+| spotted hyenas | 312 Hz | **comb** | 57 % | 52 % | 47 % | 50 % |
+|  |  | comb, no exemption | 62 % | 45 % | 29 % | 25 % |
+|  |  | pYIN | 70 % | 37 % | 26 % | 15 % |
+|  |  | CREPE | 73 % | 44 % | 31 % | 17 % |
+| long-billed hermits | 4477 Hz | **comb** | 21 % | 5 % | 9 % | 8 % |
+|  |  | comb, no exemption | 84 % | 38 % | 7 % | 3 % |
+|  |  | pYIN | 82 % | 20 % | 15 % | 9 % |
+|  |  | CREPE | 96 % | 24 % | 16 % | 12 % |
 
 ## Description
 
@@ -59,18 +67,17 @@ are k=2 and k=3.
 
 - **Lions (150 Hz) and monk parakeets (1.8 kHz)** reproduce the elephant
   result. The exemption is worth 33 and 1 points with the fundamental present,
-  and **71–80** and **31–51** points once harmonics are removed. pYIN starts
-  best on lions (98 %) and collapses to 11 %.
+  and **71–80** and **31–51** points once harmonics are removed. With the
+  fundamental present CREPE is best on every taxon (100 % on lions), and pYIN
+  starts at 97 % on lions; both collapse (CREPE 6 % by k = 2, pYIN 6 % by
+  k = 6).
 - **Hyenas and hermits fail, and both fail *downward*** — onto F0/2 (median
   tracked/annotated ratio 0.52) and F0/3 (0.35). Downward failure is what the
   *gap term* prevents, not what the exemption addresses.
 - **The cause is measured, not guessed.** Hermits have only **4.7 harmonics
   below Nyquist** and 8 peaks per frame; hyena frames **saturate the 40-peak
   cap** at 40 peaks per frame. In neither case does the gap term have the
-  interior evidence it needs to reject a subharmonic. This is the same failure
-  mode the paper already states as a limitation ("short faint calls with two or
-  three peaks above the floor — too few peaks for the gap term"), now confirmed
-  on independent taxa.
+  interior evidence it needs to reject a subharmonic (paper, section 4.3).
 - Consequently, on hermits the exemption **costs 63 points** (21 % against
   84 %). The exemption is a prior that the low lines are missing; where the
   stack is too short for the gap term to adjudicate, the prior is unsupported.
@@ -108,11 +115,16 @@ same stem. Subdirectories are searched, so the archive's own nesting is fine.
 Then:
 
 ```
-python3 xspecies.py                 # three arms: comb, comb without the exemption, pYIN
-python3 xspecies_crepe.py           # adds the CREPE arm, needs torch + torchcrepe
+python3 xspecies.py
+python3 xspecies_crepe.py
 python3 merge_crepe.py
 python3 make_fig.py --1col
 ```
+
+The first runs three arms (comb, comb without the exemption, pYIN) on 100
+clips per species, the default `--limit`. The second adds the CREPE arm on the
+same clips and needs torch and torchcrepe. The last two fold the arms together
+and draw Figure 2.
 
 `data/` is git-ignored, so a download here will not be committed.
 

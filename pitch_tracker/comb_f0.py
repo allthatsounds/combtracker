@@ -1,4 +1,4 @@
-"""Peak-comb fundamental-frequency estimation for infrasonic harmonic calls.
+"""Harmonic-comb fundamental-frequency estimation for infrasonic harmonic calls.
 
 Motivation
 ----------
@@ -45,7 +45,7 @@ the lowest visible line.
 
 Front end
 ---------
-Only numpy/scipy are needed here.  The filterbank front end used elsewhere in
+Only numpy is needed here.  The filterbank front end used elsewhere in
 the pitch tracker (``audfilters`` / ``filterbankphasegrad``) comes from
 ``cool_frames``; this module deliberately keeps its own STFT so that F0
 estimation stays independent of filterbank design choices.
@@ -81,7 +81,8 @@ class CombF0Result:
     f0 : ndarray, shape (T,)
         Fundamental frequency in Hz, ``NaN`` where the frame is unvoiced.
     confidence : ndarray, shape (T,)
-        Explained-peak weight of the chosen candidate, normalised to ``[0, 1]``.
+        Frame score ``S`` of the chosen candidate, min-max normalised to
+        ``[0, 1]`` over the voiced frames; 0 where unvoiced.
     n_peaks : ndarray, shape (T,)
         Number of spectral peaks detected in the frame (diagnostic).
     harmonic_numbers : ndarray, shape (T,)
@@ -140,7 +141,6 @@ def pick_peaks(
     band = (freqs >= f_lo) & (freqs <= f_hi)
     if band.sum() < 5:
         return np.zeros(0), np.zeros(0)
-    idx0 = int(np.argmax(band))
     m = mag[band]
     f = freqs[band]
 
@@ -175,7 +175,6 @@ def pick_peaks(
         pf, pw = pf[keep], pw[keep]
 
     order = np.argsort(pf)
-    del idx0
     return pf[order], pw[order]
 
 
@@ -208,8 +207,7 @@ def comb_score_frame(
     sensitive to F0 precision: an F0 that is 1% low places its 12th harmonic
     about 2 Hz away from the observed line, so high harmonics (which is where
     the energy actually lives in these calls) pin F0 down far more tightly
-    than the fundamental region ever could.  (The paper quotes this same
-    worked example; keep the two in step if either changes.)
+    than the fundamental region ever could.
 
     ``sigma_hz`` and ``gap_penalty`` are REQUIRED.  They used to default to
     1.5 Hz and 0.55, and :func:`estimate_f0` always overrode them with
@@ -291,36 +289,6 @@ def comb_score_frame(
     s = (explained - gap_penalty * mean_w * n_empty) / total_w
     scores[valid] = s[valid]
     lowest_k[valid] = k_lo[valid].astype(int)
-    return scores, lowest_k
-
-    w = np.asarray(peak_weights, dtype=float)
-    p = np.asarray(peak_freqs, dtype=float)
-    total_w = float(np.sum(w))
-    if total_w <= 0.0:
-        return scores, lowest_k
-    mean_w = float(np.mean(w))
-
-    for ci, f0 in enumerate(f0_cands):
-        k = np.round(p / f0)
-        np.clip(k, 1, max_harmonic, out=k)
-        dev = np.abs(p - k * f0)
-        match = np.exp(-((dev / sigma_hz) ** 2))
-        explained = float(np.sum(w * match))
-        if explained <= 0.0:
-            continue
-
-        # Which harmonic slots are genuinely occupied?
-        hit = match > 0.5
-        if not hit.any():
-            continue
-        ks = np.unique(k[hit].astype(int))
-        k_lo, k_hi = int(ks[0]), int(ks[-1])
-        n_interior = max(k_hi - k_lo + 1, 1)
-        n_empty = n_interior - len(ks)
-
-        scores[ci] = (explained - gap_penalty * mean_w * n_empty) / total_w
-        lowest_k[ci] = k_lo
-
     return scores, lowest_k
 
 
@@ -427,21 +395,25 @@ def estimate_f0(
         (``0.94 / win_eff``, a little under the half-amplitude half-width of a
         Hann main lobe); that evaluates to 0.75 Hz at the default window and
         widens automatically when the window is shortened.  The coefficient is
-        empirical, not derived -- see ``tracker_reproduce/src/sigma_sweep.py``,
-        which finds octave accuracy flat over ``0.7--1.2 / win_eff``.
+        empirical, not derived; on the development split the octave-correct
+        rate stays at 95-97 of 99 clips for any coefficient from 0.4 to 2.0
+        (the paper quotes 0.6-1.4), so 0.94 is not a tuned optimum.
     gap_penalty : float
         Empty-interior-line penalty, see :func:`comb_score_frame`.
     transition_weight : float
         Viterbi penalty on ``|log f0[t] - log f0[t-1]|``.  Frame scores are
-        normalised to ``(-inf, 1]``, so this is directly interpretable: at 6.0
-        an octave jump must buy back ``6 * ln 2 ~ 4.2`` units of score, which a
-        single ambiguous frame cannot do.  These calls hold F0 to ~1 Hz over
+        normalised to ``(-inf, 1]``, so this is directly interpretable: at the
+        default 12.0 an octave jump must buy back ``12 * ln 2 ~ 8.3`` units of
+        score, which a single ambiguous frame cannot do.  These calls hold F0 to ~1 Hz over
         seconds, so strong continuity is physically justified.
     min_peaks : int
-        Frames with fewer detected peaks are marked unvoiced.
+        Frames with fewer detected peaks are not scored and are left unvoiced;
+        the 6 dB peak threshold (``peak_threshold_db``) decides what counts as
+        a peak.
     voicing_quantile : float
-        Frames whose explained weight falls below this quantile of the voiced
-        frames' explained weight are marked unvoiced.
+        After decoding, a frame is marked unvoiced when its score is both
+        negative and below this quantile of the scores along the decoded
+        track.
 
     Returns
     -------

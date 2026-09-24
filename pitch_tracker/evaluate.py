@@ -5,6 +5,12 @@ threshold, and an *octave-tolerant* variant that takes the best-fitting
 harmonic multiple of the reference independently per frame.  The gap between
 the strict and octave-tolerant numbers is the octave/harmonic-lock diagnostic;
 the per-clip modal multiple says which harmonic a tracker settled on.
+
+When two multiples tie for the mode, the tie goes to the one nearer 1 in log
+frequency, and between two equally near (e.g. 1/2 and 2) to the one whose
+frames fit better.  The earlier rule took the smallest tied multiple, which
+scored a 1/2-vs-1 tie as a downward error but a 1-vs-2 tie as correct -- a
+bias by error direction.  ``octave_mode_tied`` flags the clips concerned.
 """
 
 from __future__ import annotations
@@ -13,7 +19,6 @@ import wave
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 from .groundtruth import derive_f0_curve, derive_f0_curve_v2
 
@@ -22,6 +27,7 @@ __all__ = [
     "best_octave_cents_error",
     "load_wav",
     "resample_linear",
+    "modal_multiple",
     "score_tracked_f0",
     "OCTAVE_MULTIPLES",
 ]
@@ -72,8 +78,7 @@ def load_wav(path) -> tuple[np.ndarray, float]:
     ``unknown format: 3`` on all of them.  Harnesses that catch per-clip
     exceptions -- which ours do -- then score the readable 37% and report a
     clip count without ever mentioning the rest, so file format silently
-    became a selection criterion.  (Fixed 2026-09-05; backup at
-    ``evaluate.py.bak_20260905_pre_float32``.)
+    became a selection criterion.  (Fixed 2026-09-05.)
     """
     try:
         with wave.open(str(path)) as w:
@@ -123,13 +128,35 @@ def resample_linear(x: np.ndarray, fs: float, target_fs: float) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
+def modal_multiple(mult, err_cents):
+    """Plurality multiple over a clip's frames, with a direction-neutral tie-break.
+
+    Returns ``(multiple, tied)``.  Ties go to the multiple nearest 1 in
+    ``|log2 m|``; between two equally near, to the one whose frames have the
+    smaller median ``|err_cents|``.
+    """
+    mult = np.asarray(mult, dtype=float)
+    err = np.abs(np.asarray(err_cents, dtype=float))
+    vals, counts = np.unique(mult, return_counts=True)
+    top = vals[counts == counts.max()]
+    if top.size == 1:
+        return float(top[0]), False
+    dist = np.abs(np.log2(top))
+    near = top[np.isclose(dist, dist.min())]
+    if near.size > 1:
+        fit = [float(np.median(err[mult == m])) for m in near]
+        near = near[[int(np.argmin(fit))]]
+    return float(near[0]), True
+
+
 def score_tracked_f0(
     times: np.ndarray,
     f0: np.ndarray,
-    contours: list,
+    contours: list | None,
     *,
     gt_version: str = "v2",
     max_gap_s: float = 0.2,
+    derived: dict | None = None,
 ) -> dict | None:
     """Score one clip's tracked F0 against its annotation.
 
@@ -144,6 +171,12 @@ def score_tracked_f0(
     max_gap_s : float
         Grid points further than this from any voiced tracker frame are not
         scored, so a sparse track is not silently interpolated across silence.
+    derived : dict, optional
+        An already-derived reference with the keys ``derive_f0_curve_v2``
+        returns (``grid_t``, ``f0_derived``, ``c1_interp``, ``n_contours``,
+        ``harmonic_number_of_contour1``, optionally ``gt_spread_cents``).  Pass
+        it for a corpus that annotates F0 directly; ``contours`` is then
+        ignored.
 
     Returns
     -------
@@ -151,8 +184,9 @@ def score_tracked_f0(
         ``None`` when the annotation yields no usable F0 curve or nothing
         overlaps.
     """
-    derive = derive_f0_curve_v2 if gt_version == "v2" else derive_f0_curve
-    derived = derive(contours)
+    if derived is None:
+        derive = derive_f0_curve_v2 if gt_version == "v2" else derive_f0_curve
+        derived = derive(contours)
     if derived is None:
         return None
 
@@ -179,6 +213,7 @@ def score_tracked_f0(
     pv, rv = pred[mask], ref_all[mask]
     e_strict = cents_error(pv, rv)
     e_oct, mult = best_octave_cents_error(pv, rv)
+    mode_mult, mode_tied = modal_multiple(mult, e_oct)
 
     mask_c1 = mask & np.isfinite(derived["c1_interp"])
     e_c1 = (cents_error(pred[mask_c1], derived["c1_interp"][mask_c1])
@@ -197,7 +232,8 @@ def score_tracked_f0(
         "gross_error_rate_strict_50c": float(np.mean(np.abs(e_strict) > 50)),
         "medae_cents_octave_tolerant": float(np.median(np.abs(e_oct))),
         "gross_error_rate_octave_tolerant_50c": float(np.mean(np.abs(e_oct) > 50)),
-        "octave_multiple_mode": float(pd.Series(mult).mode().iloc[0]),
+        "octave_multiple_mode": mode_mult,
+        "octave_mode_tied": mode_tied,
         "frac_multiple_1": float(np.mean(mult == 1)),
         "medae_cents_vs_contour1": float(np.median(np.abs(e_c1))) if len(e_c1) else np.nan,
         "corr_pearson": float(np.corrcoef(pv, rv)[0, 1]) if n >= 3 else np.nan,
