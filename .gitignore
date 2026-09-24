@@ -18,4 +18,4 @@ xspecies/results/*.png
 xspecies/*.png
 
 # A reviewer's Dryad download.
-xspecies/data/
+xspecies/data

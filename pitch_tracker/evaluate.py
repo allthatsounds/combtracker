@@ -6,11 +6,10 @@ harmonic multiple of the reference independently per frame.  The gap between
 the strict and octave-tolerant numbers is the octave/harmonic-lock diagnostic;
 the per-clip modal multiple says which harmonic a tracker settled on.
 
-When two multiples tie for the mode, the tie goes to the one nearer 1 in log
-frequency, and between two equally near (e.g. 1/2 and 2) to the one whose
-frames fit better.  The earlier rule took the smallest tied multiple, which
-scored a 1/2-vs-1 tie as a downward error but a 1-vs-2 tie as correct -- a
-bias by error direction.  ``octave_mode_tied`` flags the clips concerned.
+When two multiples tie for the mode, the tie goes to the smallest of them.
+This is the rule every published number was computed with.  It is not neutral
+in direction -- a 1/2-vs-1 tie scores as a downward error, a 1-vs-2 tie as
+correct -- so ``octave_mode_tied`` flags the clips where it decided anything.
 """
 
 from __future__ import annotations
@@ -128,25 +127,16 @@ def resample_linear(x: np.ndarray, fs: float, target_fs: float) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 
-def modal_multiple(mult, err_cents):
-    """Plurality multiple over a clip's frames, with a direction-neutral tie-break.
+def modal_multiple(mult):
+    """Plurality multiple over a clip's frames; ties go to the smallest.
 
-    Returns ``(multiple, tied)``.  Ties go to the multiple nearest 1 in
-    ``|log2 m|``; between two equally near, to the one whose frames have the
-    smaller median ``|err_cents|``.
+    Returns ``(multiple, tied)``.  Smallest-wins is the rule the published
+    results use (it is what ``pandas.Series.mode().iloc[0]`` returned before
+    pandas was dropped), so the numbers reproduce exactly.
     """
-    mult = np.asarray(mult, dtype=float)
-    err = np.abs(np.asarray(err_cents, dtype=float))
-    vals, counts = np.unique(mult, return_counts=True)
+    vals, counts = np.unique(np.asarray(mult, dtype=float), return_counts=True)
     top = vals[counts == counts.max()]
-    if top.size == 1:
-        return float(top[0]), False
-    dist = np.abs(np.log2(top))
-    near = top[np.isclose(dist, dist.min())]
-    if near.size > 1:
-        fit = [float(np.median(err[mult == m])) for m in near]
-        near = near[[int(np.argmin(fit))]]
-    return float(near[0]), True
+    return float(top.min()), bool(top.size > 1)
 
 
 def score_tracked_f0(
@@ -213,7 +203,7 @@ def score_tracked_f0(
     pv, rv = pred[mask], ref_all[mask]
     e_strict = cents_error(pv, rv)
     e_oct, mult = best_octave_cents_error(pv, rv)
-    mode_mult, mode_tied = modal_multiple(mult, e_oct)
+    mode_mult, mode_tied = modal_multiple(mult)
 
     mask_c1 = mask & np.isfinite(derived["c1_interp"])
     e_c1 = (cents_error(pred[mask_c1], derived["c1_interp"][mask_c1])

@@ -107,8 +107,10 @@ what they are.
 - **CREPE is not reproducible run to run.** `torchcrepe.predict` returns
   different $f_0$ on identical input and `torch.manual_seed` does not fix it —
   across 220 clips a fresh seeded run matched stored seeded rows on zero of
-  them. Octave decisions are unaffected and reproduce exactly; median cents
-  errors are stable only to a few tenths.
+  them. A rerun of the CREPE arm on another machine moved per-clip errors by
+  a few cents and flipped the octave verdict on 5 of 1,443 rows, so its curve
+  in Figure 2 can shift by a point or two. The other three arms are
+  deterministic and reproduce the shipped rows exactly.
 - The clip-level octave verdict is a plurality over a clip's frames, which is a
   stable estimator only for a tracker that answers many frames. The comb
   objective has no clip within one frame of flipping; CREPE, which answers a
