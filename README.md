@@ -117,7 +117,7 @@ text, copied from that project so the terms are byte-identical. The EUPL is
 reciprocal: a derivative carries the EUPL or one of the licences its Appendix
 lists as compatible.
 
-Copyright 2026 Clara Hollomey, Angela S. Stoeger, Matthias Zeppelzauer.
+Copyright 2026 Clara Hollomey.
 
 The licence covers the code. It does not cover the five demo recordings, which
 remain the corpus custodians' and are included by permission for demonstration,
