@@ -1,0 +1,18 @@
+numpy>=2.2
+
+# That is all the demo needs. It reads 16-bit WAVs with the standard library,
+# and the comb objective, its ablation and SHRP are pure numpy:
+#     python3 demo/run_demo.py
+
+# Redrawing the cross-species figure from the per-clip results that ship in
+# xspecies/results/ also needs:
+matplotlib>=3.10
+
+# Re-running the cross-species benchmark over the Dryad audio also needs:
+scipy>=1.15
+librosa==0.11.0
+soundfile>=0.12
+
+# ...and its CREPE arm additionally:
+torch==2.14.0
+torchcrepe==0.0.24
